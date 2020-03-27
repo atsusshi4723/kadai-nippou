@@ -1,6 +1,8 @@
 package controllers.reports;
 
 import java.io.IOException;
+import java.sql.Date;
+import java.sql.Timestamp;
 import java.util.List;
 
 import javax.persistence.EntityManager;
@@ -12,55 +14,60 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import models.Report;
+import models.validators.ReportValidator;
 import utils.DBUtil;
 
 /**
- * Servlet implementation class ReportsIndexServlet
+ * Servlet implementation class ReportsUpdateServlet
  */
-@WebServlet("/reports/index")
-public class ReportsIndexServlet extends HttpServlet {
+@WebServlet("/reports/update")
+public class ReportsUpdateServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
 
     /**
      * @see HttpServlet#HttpServlet()
      */
-    public ReportsIndexServlet() {
+    public ReportsUpdateServlet() {
         super();
         // TODO Auto-generated constructor stub
     }
 
     /**
-     * @see HttpServlet#doGet(HttpServletRequest request, HttpServletResponse response)
+     * @see HttpServlet#doPost(HttpServletRequest request, HttpServletResponse response)
      */
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        EntityManager em = DBUtil.createEntityManager();
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        String _token = (String)request.getParameter("_token");
+        if(_token != null && _token.equals(request.getSession().getId())) {
+            EntityManager em = DBUtil.createEntityManager();
 
-        int page;
-        try{
-            page = Integer.parseInt(request.getParameter("page"));
-        } catch(Exception e) {
-            page = 1;
+            Report r = em.find(Report.class, (Integer)(request.getSession().getAttribute("report_id")));
+
+            r.setReport_date(Date.valueOf(request.getParameter("report_date")));
+            r.setTitle(request.getParameter("title"));
+            r.setContent(request.getParameter("content"));
+            r.setUpdated_at(new Timestamp(System.currentTimeMillis()));
+
+            List<String> errors = ReportValidator.validate(r);
+            if(errors.size() > 0) {
+                em.close();
+
+                request.setAttribute("_token", request.getSession().getId());
+                request.setAttribute("report", r);
+                request.setAttribute("errors", errors);
+
+                RequestDispatcher rd = request.getRequestDispatcher("/WEB-INF/views/reports/edit.jsp");
+                rd.forward(request, response);
+            } else {
+                em.getTransaction().begin();
+                em.getTransaction().commit();
+                em.close();
+                request.getSession().setAttribute("flush", "更新が完了しました。");
+
+                request.getSession().removeAttribute("report_id");
+
+                response.sendRedirect(request.getContextPath() + "/reports/index");
+            }
         }
-        List<Report> reports = em.createNamedQuery("getAllReports", Report.class)
-                                  .setFirstResult(15 * (page - 1))
-                                  .setMaxResults(15)
-                                  .getResultList();
-
-        long reports_count = (long)em.createNamedQuery("getReportsCount", Long.class)
-                                     .getSingleResult();
-
-        em.close();
-
-        request.setAttribute("reports", reports);
-        request.setAttribute("reports_count", reports_count);
-        request.setAttribute("page", page);
-        if(request.getSession().getAttribute("flush") != null) {
-            request.setAttribute("flush", request.getSession().getAttribute("flush"));
-            request.getSession().removeAttribute("flush");
-        }
-
-        RequestDispatcher rd = request.getRequestDispatcher("/WEB-INF/views/reports/index.jsp");
-        rd.forward(request, response);
     }
 
 }
